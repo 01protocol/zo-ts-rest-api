@@ -11,7 +11,8 @@ class IndexRoute implements Routes {
 
   private initializeRoutes() {
     //GET
-    this.router.get(`${this.path}/login`, req => {
+    this.router.post(`${this.path}/login`, req => {
+      const commitment = req.body.commitment;
       const res = {
         success: true,
         result: [{}],
