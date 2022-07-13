@@ -130,3 +130,7 @@ dist
 .pnp.*
 
 .idea
+
+.env.development.local
+.env.production.local
+.env.test.local

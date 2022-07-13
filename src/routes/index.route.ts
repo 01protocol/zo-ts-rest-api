@@ -1,9 +1,38 @@
 import { Router } from 'express';
 import { Routes } from '@interfaces/routes.interface';
+import { Commitment, Connection, Keypair } from '@solana/web3.js';
+import { Cluster, createProgram, Margin, State, ZO_DEVNET_STATE_KEY, ZO_MAINNET_STATE_KEY } from '@zero_one/client';
+import { COMMITMENT, DEPLOY_MODE, RPC_URL, SECRET_KEY, SKIP_PREFLIGHT } from '@config';
+import { Provider } from '@project-serum/anchor';
+import { Wallet } from '@project-serum/anchor/src/provider';
+import { bs58 } from '@project-serum/anchor/dist/cjs/utils/bytes';
+
+export enum DeployMode {
+  Devnet = 'devnet',
+  Prod = 'prod',
+}
+
+export function getCluster() {
+  if (DEPLOY_MODE !== DeployMode.Devnet) {
+    return Cluster.Mainnet;
+  }
+  return Cluster.Devnet;
+}
+
+export const STATE_KEY = DEPLOY_MODE == DeployMode.Devnet ? ZO_DEVNET_STATE_KEY : ZO_MAINNET_STATE_KEY;
+
+function getSecretKey() {
+  try {
+    return Keypair.fromSecretKey(Uint8Array.from(SECRET_KEY.split(',').map(el => parseInt(el))));
+  } catch (_) {
+    return Keypair.fromSecretKey(bs58.decode(SECRET_KEY));
+  }
+}
 
 class IndexRoute implements Routes {
-  public path = '/';
+  public path = '';
   public router = Router();
+  private margin: Margin;
 
   constructor() {
     this.initializeRoutes();
@@ -11,17 +40,55 @@ class IndexRoute implements Routes {
 
   private initializeRoutes() {
     //GET
-    this.router.post(`${this.path}/login`, req => {
-      const commitment = req.body.commitment;
-      const res = {
-        success: true,
-        result: [{}],
-      };
-      console.log(res);
-      throw new Error('Unimplemented');
+    this.router.post(`${this.path}/login`, async (req, res) => {
+      try {
+        console.log(DEPLOY_MODE == DeployMode.Devnet);
+        if (this.margin) {
+          await this.margin.unsubscribe();
+        }
+        const commitment = req.body.commitment ? (req.body.commitment as Commitment) : (COMMITMENT as Commitment);
+        const rpcUrl = req.body.rpcUrl ? req.body.rpcUrl : RPC_URL;
+        const skipPreflight = req.body.skipPreflight ? (req.body.skipPreflight as boolean) : SKIP_PREFLIGHT == 'true';
+        const keypair = getSecretKey();
+        console.log(keypair.publicKey.toString());
+        const wallet: Wallet = {
+          publicKey: keypair.publicKey,
+          signTransaction: async tx => {
+            await tx.sign(keypair);
+            return tx;
+          },
+          signAllTransactions: async txs => {
+            for (const tx of txs) {
+              await tx.sign(keypair);
+            }
+            return txs;
+          },
+        };
+        const connection = new Connection(rpcUrl);
+        const provider = new Provider(connection, wallet, {
+          commitment: commitment,
+          skipPreflight: skipPreflight,
+        });
+        const program = createProgram(provider, getCluster());
+        console.log(' no bueno');
+        const state = await State.load(program, STATE_KEY, commitment);
+        console.log('bueno');
+        const margin = await Margin.load(program, state, null, keypair.publicKey, commitment);
+        await margin.subscribe();
+        const result = {
+          success: true,
+          marginInfo: margin.toString(),
+        };
+        this.margin = margin;
+        res.send(result);
+      } catch (e) {
+        console.log(e);
+        res.status(400);
+        res.send({ success: false });
+      }
     });
-    this.router.get(`${this.path}/markets`, req => {
-      const res = {
+    this.router.get(`${this.path}/markets`, async (req, res) => {
+      const result = {
         success: true,
         result: [
           {
@@ -51,12 +118,12 @@ class IndexRoute implements Routes {
           },
         ],
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.get(`${this.path}/markets/:market_name`, req => {
+    this.router.get(`${this.path}/markets/:market_name`, async (req, res) => {
       //fixme: check if array
-      const res = {
+      const result = {
         success: true,
         result: [
           {
@@ -86,24 +153,24 @@ class IndexRoute implements Routes {
           },
         ],
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.get(`${this.path}/markets/:market_name/orderbook`, req => {
-      const res = {
+    this.router.get(`${this.path}/markets/:market_name/orderbook`, async (req, res) => {
+      const result = {
         success: true,
         result: {
           asks: [[4114.25, 6.263]],
           bids: [[4112.25, 49.29]],
         },
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.get(`${this.path}/markets/:market_name/trades`, req => {
+    this.router.get(`${this.path}/markets/:market_name/trades`, async (req, res) => {
       const startTime = req.query.start_time;
       const end_time = req.query.end_time;
-      const res = {
+      const result = {
         success: true,
         result: [
           {
@@ -116,13 +183,13 @@ class IndexRoute implements Routes {
           },
         ],
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.get(`${this.path}/markets/:market_name/candles`, req => {
+    this.router.get(`${this.path}/markets/:market_name/candles`, async (req, res) => {
       const startTime = req.query.start_time;
       const end_time = req.query.end_time;
-      const res = {
+      const result = {
         success: true,
         result: [
           {
@@ -135,13 +202,13 @@ class IndexRoute implements Routes {
           },
         ],
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.get(`${this.path}/funding_rates`, req => {
+    this.router.get(`${this.path}/funding_rates`, async (req, res) => {
       const startTime = req.query.start_time;
       const end_time = req.query.end_time;
-      const res = {
+      const result = {
         success: true,
         result: [
           {
@@ -151,11 +218,11 @@ class IndexRoute implements Routes {
           },
         ],
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.get(`${this.path}/account`, req => {
-      const res = {
+    this.router.get(`${this.path}/account`, async (req, res) => {
+      const result = {
         success: true,
         result: {
           backstopProvider: true,
@@ -191,11 +258,11 @@ class IndexRoute implements Routes {
           ],
         },
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.get(`${this.path}/positions`, req => {
-      const res = {
+    this.router.get(`${this.path}/positions`, async (req, res) => {
+      const result = {
         success: true,
         result: [
           {
@@ -222,21 +289,21 @@ class IndexRoute implements Routes {
           },
         ],
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
     //POST
     /*
-                            {
-                              "leverage": 10,
-                            }
-                             */
-    this.router.post(`${this.path}/account/leverage`, req => {
+                                            {
+                                              "leverage": 10,
+                                            }
+                                             */
+    this.router.post(`${this.path}/account/leverage`, async (req, res) => {
       throw new Error('Unimplemented');
     });
     //GET
-    this.router.get(`${this.path}/wallet/coins`, req => {
-      const res = {
+    this.router.get(`${this.path}/wallet/coins`, async (req, res) => {
+      const result = {
         success: true,
         result: [
           {
@@ -260,11 +327,11 @@ class IndexRoute implements Routes {
           },
         ],
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.get(`${this.path}/wallet/balances`, req => {
-      const res = {
+    this.router.get(`${this.path}/wallet/balances`, async (req, res) => {
+      const result = {
         success: true,
         result: [
           {
@@ -277,13 +344,13 @@ class IndexRoute implements Routes {
           },
         ],
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.get(`${this.path}/wallet/deposits`, req => {
+    this.router.get(`${this.path}/wallet/deposits`, async (req, res) => {
       const startTime = req.query.start_time;
       const end_time = req.query.end_time;
-      const res = {
+      const result = {
         success: true,
         result: [
           {
@@ -300,13 +367,13 @@ class IndexRoute implements Routes {
           },
         ],
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.get(`${this.path}/wallet/withdrawals`, req => {
+    this.router.get(`${this.path}/wallet/withdrawals`, async (req, res) => {
       const startTime = req.query.start_time;
       const end_time = req.query.end_time;
-      const res = {
+      const result = {
         success: true,
         result: [
           {
@@ -323,39 +390,39 @@ class IndexRoute implements Routes {
           },
         ],
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
     //POST
     /*
-                            {
-                              "coin": "USDTBEAR",
-                              "size": 20.2,
-                              "address": "0x83a127952d266A6eA306c40Ac62A4a70668FE3BE",
-                              "tag": null,
-                              "password": "my_withdrawal_password",
-                              "code": 152823
-                            }
-                             */
-    this.router.post(`${this.path}/wallet/withdrawals`, req => {
+                                            {
+                                              "coin": "USDTBEAR",
+                                              "size": 20.2,
+                                              "address": "0x83a127952d266A6eA306c40Ac62A4a70668FE3BE",
+                                              "tag": null,
+                                              "password": "my_withdrawal_password",
+                                              "code": 152823
+                                            }
+                                             */
+    this.router.post(`${this.path}/wallet/withdrawals`, async (req, res) => {
       throw new Error('Unimplemented');
     });
     /*
-                            {
-                              "coin": "USDTBEAR",
-                              "size": 20.2,
-                              "address": "0x83a127952d266A6eA306c40Ac62A4a70668FE3BE",
-                              "tag": null,
-                              "password": "my_withdrawal_password",
-                              "code": 152823
-                            }
-                             */
-    this.router.post(`${this.path}/wallet/deposits`, req => {
+                                            {
+                                              "coin": "USDTBEAR",
+                                              "size": 20.2,
+                                              "address": "0x83a127952d266A6eA306c40Ac62A4a70668FE3BE",
+                                              "tag": null,
+                                              "password": "my_withdrawal_password",
+                                              "code": 152823
+                                            }
+                                             */
+    this.router.post(`${this.path}/wallet/deposits`, async (req, res) => {
       throw new Error('Unimplemented');
     });
     //GET
-    this.router.get(`${this.path}/orders`, req => {
-      const res = {
+    this.router.get(`${this.path}/orders`, async (req, res) => {
+      const result = {
         success: true,
         result: [
           {
@@ -378,13 +445,13 @@ class IndexRoute implements Routes {
           },
         ],
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.get(`${this.path}/orders/history`, req => {
+    this.router.get(`${this.path}/orders/history`, async (req, res) => {
       const startTime = req.query.start_time;
       const end_time = req.query.end_time;
-      const res = {
+      const result = {
         success: true,
         result: [
           {
@@ -408,11 +475,11 @@ class IndexRoute implements Routes {
         ],
         hasMoreData: false,
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.get(`${this.path}/conditional_orders`, req => {
-      const res = {
+    this.router.get(`${this.path}/conditional_orders`, async (req, res) => {
+      const result = {
         success: true,
         result: [
           {
@@ -439,11 +506,11 @@ class IndexRoute implements Routes {
           },
         ],
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.get(`${this.path}/conditional_orders/:conditional_order_id/triggers`, req => {
-      const res = {
+    this.router.get(`${this.path}/conditional_orders/:conditional_order_id/triggers`, async (req, res) => {
+      const result = {
         success: true,
         result: [
           {
@@ -455,13 +522,13 @@ class IndexRoute implements Routes {
           },
         ],
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.get(`${this.path}/conditional_orders/history`, req => {
+    this.router.get(`${this.path}/conditional_orders/history`, async (req, res) => {
       const startTime = req.query.start_time;
       const end_time = req.query.end_time;
-      const res = {
+      const result = {
         success: true,
         result: [
           {
@@ -490,25 +557,25 @@ class IndexRoute implements Routes {
         ],
         hasMoreData: false,
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
     //POST
     /*
-                            {
-                              "market": "XRP-PERP",
-                              "side": "sell",
-                              "price": 0.306525,
-                              "type": "limit",
-                              "size": 31431.0,
-                              "reduceOnly": false,
-                              "ioc": false,
-                              "postOnly": false,
-                              "clientId": null
-                            }
-                             */
-    this.router.post(`${this.path}/orders`, req => {
-      const res = {
+                                            {
+                                              "market": "XRP-PERP",
+                                              "side": "sell",
+                                              "price": 0.306525,
+                                              "type": "limit",
+                                              "size": 31431.0,
+                                              "reduceOnly": false,
+                                              "ioc": false,
+                                              "postOnly": false,
+                                              "clientId": null
+                                            }
+                                             */
+    this.router.post(`${this.path}/orders`, async (req, res) => {
+      const result = {
         success: true,
         result: {
           createdAt: '2019-03-05T09:56:55.728933+00:00',
@@ -528,40 +595,40 @@ class IndexRoute implements Routes {
           clientId: null,
         },
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
     /*
-                            Stop
-                            {
-                              "market": "XRP-PERP",
-                              "side": "sell",
-                              "triggerPrice": 0.306525,
-                              "size": 31431.0,
-                              "type": "stop",
-                              "reduceOnly": false,
-                            }
-                            Trailing stop
-                            {
-                              "market": "XRP-PERP",
-                              "side": "sell",
-                              "trailValue": -0.05,
-                              "size": 31431.0,
-                              "type": "trailingStop",
-                              "reduceOnly": false,
-                            }
-                            Take profit
-                            {
-                              "market": "XRP-PERP",
-                              "side": "buy",
-                              "triggerPrice": 0.367895,
-                              "size": 31431.0,
-                              "type": "takeProfit",
-                              "reduceOnly": false,
-                            }
-                             */
-    this.router.post(`${this.path}/conditional_orders`, req => {
-      const res = {
+                                            Stop
+                                            {
+                                              "market": "XRP-PERP",
+                                              "side": "sell",
+                                              "triggerPrice": 0.306525,
+                                              "size": 31431.0,
+                                              "type": "stop",
+                                              "reduceOnly": false,
+                                            }
+                                            Trailing stop
+                                            {
+                                              "market": "XRP-PERP",
+                                              "side": "sell",
+                                              "trailValue": -0.05,
+                                              "size": 31431.0,
+                                              "type": "trailingStop",
+                                              "reduceOnly": false,
+                                            }
+                                            Take profit
+                                            {
+                                              "market": "XRP-PERP",
+                                              "side": "buy",
+                                              "triggerPrice": 0.367895,
+                                              "size": 31431.0,
+                                              "type": "takeProfit",
+                                              "reduceOnly": false,
+                                            }
+                                             */
+    this.router.post(`${this.path}/conditional_orders`, async (req, res) => {
+      const result = {
         success: true,
         result: {
           createdAt: '2019-03-05T09:56:55.728933+00:00',
@@ -582,17 +649,17 @@ class IndexRoute implements Routes {
           retryUntilFilled: false,
         },
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
     /*
-                            {
-                              "size": 31431,
-                              "price": 0.326525,
-                            }
-                             */
-    this.router.post(`${this.path}/orders/:order_id/modify`, req => {
-      const res = {
+                                            {
+                                              "size": 31431,
+                                              "price": 0.326525,
+                                            }
+                                             */
+    this.router.post(`${this.path}/orders/:order_id/modify`, async (req, res) => {
+      const result = {
         success: true,
         result: {
           createdAt: '2019-03-05T11:56:55.728933+00:00',
@@ -612,17 +679,17 @@ class IndexRoute implements Routes {
           clientId: null,
         },
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
     /*
-                            {
-                              "size": 31431,
-                              "price": 0.326525,
-                            }
-                             */
-    this.router.post(`${this.path}/orders/by_client_id/:client_order_id/modify`, req => {
-      const res = {
+                                            {
+                                              "size": 31431,
+                                              "price": 0.326525,
+                                            }
+                                             */
+    this.router.post(`${this.path}/orders/by_client_id/:client_order_id/modify`, async (req, res) => {
+      const result = {
         success: true,
         result: {
           createdAt: '2019-03-05T11:56:55.728933+00:00',
@@ -642,29 +709,29 @@ class IndexRoute implements Routes {
           clientId: null,
         },
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
     /*
-                            Stop
-                            {
-                              "triggerPrice": 0.306225,
-                              "size": 31431.0,
-                            }
-                            Trailing stop
-                            {
-                              "trailValue": -0.06,
-                              "size": 31432.0,
-                            }
-                            Take profit
-                            {
-                              "triggerPrice": 0.367885,
-                              "size": 31433.0,
+                                            Stop
+                                            {
+                                              "triggerPrice": 0.306225,
+                                              "size": 31431.0,
+                                            }
+                                            Trailing stop
+                                            {
+                                              "trailValue": -0.06,
+                                              "size": 31432.0,
+                                            }
+                                            Take profit
+                                            {
+                                              "triggerPrice": 0.367885,
+                                              "size": 31433.0,
 
-                            }
-                             */
-    this.router.post(`${this.path}/conditional_orders/:order_id/modify`, req => {
-      const res = {
+                                            }
+                                             */
+    this.router.post(`${this.path}/conditional_orders/:order_id/modify`, async (req, res) => {
+      const result = {
         success: true,
         result: {
           createdAt: '2019-03-05T09:56:55.728933+00:00',
@@ -687,12 +754,12 @@ class IndexRoute implements Routes {
           retryUntilFilled: false,
         },
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
     //GET
-    this.router.get(`${this.path}/orders/:order_id`, req => {
-      const res = {
+    this.router.get(`${this.path}/orders/:order_id`, async (req, res) => {
+      const result = {
         success: true,
         result: {
           createdAt: '2019-03-05T09:56:55.728933+00:00',
@@ -714,11 +781,11 @@ class IndexRoute implements Routes {
           liquidation: false,
         },
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.get(`${this.path}/orders/by_client_id/:client_order_id`, req => {
-      const res = {
+    this.router.get(`${this.path}/orders/by_client_id/:client_order_id`, async (req, res) => {
+      const result = {
         success: true,
         result: {
           createdAt: '2019-03-05T09:56:55.728933+00:00',
@@ -739,58 +806,50 @@ class IndexRoute implements Routes {
           clientId: 'your_client_order_id',
         },
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
     //DELETE
-    this.router.delete(`${this.path}/orders/{order_id}`, req => {
-      const res = {
+    this.router.delete(`${this.path}/orders/{order_id}`, async (req, res) => {
+      const result = {
         success: true,
         result: 'Order queued for cancelation',
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.delete(`${this.path}/twap_orders/:order_id`, req => {
-      const res = {
+    this.router.delete(`${this.path}/orders/by_client_id/:client_order_id`, async (req, res) => {
+      const result = {
         success: true,
         result: 'Order queued for cancelation',
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.delete(`${this.path}/orders/by_client_id/:client_order_id`, req => {
-      const res = {
+    this.router.delete(`${this.path}/conditional_orders/{id}`, async (req, res) => {
+      const result = {
         success: true,
         result: 'Order queued for cancelation',
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.delete(`${this.path}/conditional_orders/{id}`, req => {
-      const res = {
+    this.router.delete(`${this.path}/orders`, async (req, res) => {
+      const result = {
         success: true,
         result: 'Order queued for cancelation',
       };
-      console.log(res);
-      throw new Error('Unimplemented');
-    });
-    this.router.delete(`${this.path}/orders`, req => {
-      const res = {
-        success: true,
-        result: 'Order queued for cancelation',
-      };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
     //GET
-    this.router.get(`${this.path}/fills`, req => {
+    this.router.get(`${this.path}/fills`, async (req, res) => {
       const market = req.query.market;
       const startTime = req.query.start_time;
       const end_time = req.query.end_time;
       const order = req.query.order;
       const orderId = req.query.orderId;
-      const res = {
+      const result = {
         success: true,
         result: [
           {
@@ -813,14 +872,14 @@ class IndexRoute implements Routes {
           },
         ],
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
-    this.router.get(`${this.path}/funding_payments`, req => {
+    this.router.get(`${this.path}/funding_payments`, async (req, res) => {
       const startTime = req.query.start_time;
       const end_time = req.query.end_time;
       const future = req.query.future;
-      const res = {
+      const result = {
         success: true,
         result: [
           {
@@ -832,7 +891,7 @@ class IndexRoute implements Routes {
           },
         ],
       };
-      console.log(res);
+      res.send(result);
       throw new Error('Unimplemented');
     });
   }
