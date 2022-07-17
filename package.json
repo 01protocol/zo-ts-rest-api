@@ -12,12 +12,15 @@
     "lint": "eslint --ignore-path .gitignore --ext .ts src/",
     "lint:fix": "npm run lint -- --fix",
     "deploy:prod": "npm run build && pm2 start ecosystem.config.js --only prod",
-    "deploy:dev": "pm2 start ecosystem.config.js --only dev"
+    "deploy:dev": "pm2 start ecosystem.config.js --only dev",
+    "local-client": "npm uninstall @zero_one/client && cd ../zo-client &&  npm run build && cd ../zo-ts-rest-api && npm i \"@zero_one/client\"@\"file:../zo-client\" --legacy-peer-deps",
+    "npm-client": "npm i \"@zero_one/client\"@\"*\" --legacy-peer-deps"
   },
   "dependencies": {
     "@project-serum/anchor": "^0.20.1",
     "@solana/web3.js": "^1.47.4",
-    "@zero_one/client": "^0.9.0",
+    "@zero_one/client": "file:../zo-client",
+    "axios": "^0.27.2",
     "bcrypt": "^5.0.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.13.1",
@@ -31,6 +34,7 @@
     "hpp": "^0.2.3",
     "jsonwebtoken": "^8.5.1",
     "morgan": "^1.10.0",
+    "realm-web": "^1.7.1",
     "swagger-jsdoc": "^6.0.0",
     "swagger-ui-express": "^4.1.6",
     "winston": "^3.3.3",
@@ -68,5 +72,11 @@
     "tsc-alias": "^1.4.1",
     "tsconfig-paths": "^3.10.1",
     "typescript": "^4.5.2"
+  },
+  "prettier": {
+    "trailingComma": "all",
+    "semi": false,
+    "tabWidth": 4,
+    "useTabs": true
   }
 }
