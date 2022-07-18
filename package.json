@@ -14,12 +14,13 @@
     "deploy:prod": "npm run build && pm2 start ecosystem.config.js --only prod",
     "deploy:dev": "pm2 start ecosystem.config.js --only dev",
     "local-client": "npm uninstall @zero_one/client && cd ../zo-client &&  npm run build && cd ../zo-ts-rest-api && npm i \"@zero_one/client\"@\"file:../zo-client\" --legacy-peer-deps",
-    "npm-client": "npm i \"@zero_one/client\"@\"*\" --legacy-peer-deps"
+    "npm-client": "npm i \"@zero_one/client\"@\"*\" --legacy-peer-deps",
+    "beta-client": "npm uninstall @zero_one/client && npm i \"@zero_one/client\"@\"beta\" --legacy-peer-deps"
   },
   "dependencies": {
     "@project-serum/anchor": "^0.20.1",
     "@solana/web3.js": "^1.47.4",
-    "@zero_one/client": "file:../zo-client",
+    "@zero_one/client": "^0.9.5",
     "axios": "^0.27.2",
     "bcrypt": "^5.0.1",
     "class-transformer": "^0.5.1",

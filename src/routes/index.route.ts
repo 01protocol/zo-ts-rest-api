@@ -1,44 +1,25 @@
 import {Router} from 'express'
 import {Routes} from '@interfaces/routes.interface'
-import {Commitment, Transaction} from '@solana/web3.js'
+import {Transaction} from '@solana/web3.js'
 import {
     AssetInfo,
-    Cluster,
     DepositLogData,
     EventNames,
     getConfirmedTransaction,
-    getKeypairFromSecretKey,
     OrderType,
     PnlLogData,
     processTransactionLogs,
     USD_DECIMALS,
-    walletFromKeyPair,
     WithdrawLogData,
     ZoUser
 } from '@zero_one/client'
-import {COMMITMENT, DEPLOY_MODE, RPC_URL, SECRET_KEY, SKIP_PREFLIGHT} from '@config'
 import {BN} from '@project-serum/anchor'
-import {Wallet} from '@project-serum/anchor/src/provider'
 import axios from 'axios'
 
-export enum DeployMode {
-    Devnet = 'devnet',
-    Prod = 'prod',
-}
-
-function getCluster() {
-    if (DEPLOY_MODE == DeployMode.Prod) {
-        return Cluster.Mainnet
-    } else if (DEPLOY_MODE == DeployMode.Devnet) {
-        return Cluster.Devnet
-    }
-    throw new Error('Unknown cluster')
-}
 
 class IndexRoute implements Routes {
     public path = ''
     public router = Router()
-    private user: ZoUser
 
     private get margin() {
         if (this.user) return this.user.margin
@@ -51,18 +32,8 @@ class IndexRoute implements Routes {
         return null
     }
 
-    constructor() {
+    constructor(private user: ZoUser) {
         this.initializeRoutes()
-    }
-
-    private static auth(req, res, next) {
-        if (req.app.get('loggedIn')) {
-            next()
-        } else {
-            res.status(400).json({
-                error: new Error('Login first!')
-            })
-        }
     }
 
     private static async errorWrapper(req, res, next, func) {
@@ -75,48 +46,8 @@ class IndexRoute implements Routes {
     }
 
     private initializeRoutes() {
-        /*
-            {
-              commitment?: Commitment
-              rpc_url?: rpc_url
-              skip_preflight?: skip_preflight
-            }
-         */
-        this.router.post(`${this.path}/login`, (req, res, next) =>
-            IndexRoute.errorWrapper(req, res, next, async (req, res) => {
-                if (this.user) {
-                    await this.user.unsubscribe()
-                }
-
-                const commitment = req.body.commitment
-                    ? (req.body.commitment as Commitment)
-                    : (COMMITMENT as Commitment)
-                const rpcUrl = req.body.rpc_url ? req.body.rpc_url : RPC_URL
-                const skipPreflight = req.body.skip_preflight
-                    ? (req.body.skip_preflight as boolean)
-                    : SKIP_PREFLIGHT == 'true'
-
-                const keypair = getKeypairFromSecretKey(SECRET_KEY)
-                const wallet: Wallet = walletFromKeyPair(keypair)
-                this.user = await ZoUser.load(wallet, getCluster(), {
-                    withRealm: true,
-                    commitment: commitment,
-                    skipPreflight: skipPreflight,
-                    rpcUrl: rpcUrl
-                })
-                await this.user.subscribe()
-                await this.user.state.subscribeToAllOrderbooks()
-                const result = {
-                    success: true,
-                    result: this.user.toString()
-                }
-                req.app.set('loggedIn', true)
-                res.send(result)
-            })
-        )
         this.router.get(
             `${this.path}/markets`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const result = []
@@ -143,7 +74,6 @@ class IndexRoute implements Routes {
         )
         this.router.get(
             `${this.path}/markets/:market_name`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const marketKey = req.params.market_name
@@ -165,7 +95,6 @@ class IndexRoute implements Routes {
         )
         this.router.get(
             `${this.path}/markets/:market_name/orderbook`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const marketKey = req.params.market_name
@@ -185,7 +114,6 @@ class IndexRoute implements Routes {
         )
         this.router.get(
             `${this.path}/markets/:market_name/trades`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const page = Number(req.query.page)
@@ -215,7 +143,6 @@ class IndexRoute implements Routes {
         )
         this.router.get(
             `${this.path}/markets/:market_name/candles`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const startTime = req.query.start_time
@@ -238,8 +165,28 @@ class IndexRoute implements Routes {
                 })
         )
         this.router.get(
+            `${this.path}/wallet/coins`,
+            (req, res, next) =>
+                IndexRoute.errorWrapper(req, res, next, async (req, res) => {
+                    const result = {
+                        success: true,
+                        result: Object.values(this.state.assets).map(
+                            (asset: AssetInfo) => ({
+                                canConvert: asset.isSwappable,
+                                canDeposit: true,
+                                canWithdraw: true,
+                                collateral: true,
+                                collateralWeight: asset.weight,
+                                id: asset.symbol,
+                                mint: asset.mint.toString()
+                            })
+                        )
+                    }
+                    res.send(result)
+                })
+        )
+        this.router.get(
             `${this.path}/funding_rates`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const page = Number(req.query.page)
@@ -253,7 +200,6 @@ class IndexRoute implements Routes {
         )
         this.router.get(
             `${this.path}/account`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const result = {
@@ -320,7 +266,6 @@ class IndexRoute implements Routes {
         )
         this.router.get(
             `${this.path}/positions`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const result = {
@@ -354,8 +299,6 @@ class IndexRoute implements Routes {
                                 unrealizedPnl: this.margin
                                     .positionPnL(pos)
                                     .toNumber(),
-                                estimatedLiquidationPrice:
-                                    this.margin.liqPrice(pos),
                                 collateralUsed: this.margin
                                     .openSize(pos.marketKey)
                                     .mul(this.state.getMarketImf(pos.marketKey))
@@ -366,30 +309,7 @@ class IndexRoute implements Routes {
                 })
         )
         this.router.get(
-            `${this.path}/wallet/coins`,
-            IndexRoute.auth,
-            (req, res, next) =>
-                IndexRoute.errorWrapper(req, res, next, async (req, res) => {
-                    const result = {
-                        success: true,
-                        result: Object.values(this.state.assets).map(
-                            (asset: AssetInfo) => ({
-                                canConvert: asset.isSwappable,
-                                canDeposit: true,
-                                canWithdraw: true,
-                                collateral: true,
-                                collateralWeight: asset.weight,
-                                id: asset.symbol,
-                                mint: asset.mint.toString()
-                            })
-                        )
-                    }
-                    res.send(result)
-                })
-        )
-        this.router.get(
             `${this.path}/wallet/balances`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const result = {
@@ -427,7 +347,6 @@ class IndexRoute implements Routes {
         )
         this.router.get(
             `${this.path}/wallet/transfers`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const page = Number(req.query.page)
@@ -441,7 +360,7 @@ class IndexRoute implements Routes {
                             coin: transfer.assetSymbol,
                             size: transfer.amount,
                             type: transfer.deposit ? 'deposit' : 'withdrawal',
-                            status: 'confirmed',
+                            status: 'processed',
                             time: transfer.date
                         }))
                     }
@@ -456,12 +375,12 @@ class IndexRoute implements Routes {
          */
         this.router.post(
             `${this.path}/wallet/withdrawals`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const symbol = req.body.coin
                     const size = req.body.size
                     const assetInfo = this.state.assets[symbol]
+                    console.log(symbol, size, true)
                     const txId = await this.margin.withdraw(symbol, size, true)
                     const tx = await getConfirmedTransaction(
                         this.user.program.provider.connection,
@@ -489,7 +408,7 @@ class IndexRoute implements Routes {
                         result: {
                             coin: symbol,
                             size: withdrawAmount,
-                            status: 'confirmed',
+                            status: 'processed',
                             time: new Date(),
                             txid: txId
                         }
@@ -498,14 +417,13 @@ class IndexRoute implements Routes {
                 })
         )
         /*
-                                                                                                      {
-                                                                                                        "coin": "USDTBEAR",
-                                                                                                        "size": 20.2,
-                                                                                                      }
-                                                                                                   */
+          {
+            "coin": "USDTBEAR",
+            "size": 20.2,
+          }
+       */
         this.router.post(
             `${this.path}/wallet/deposits`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const symbol = req.body.coin
@@ -538,7 +456,7 @@ class IndexRoute implements Routes {
                         result: {
                             coin: symbol,
                             size: depositAmount,
-                            status: 'confirmed',
+                            status: 'processed',
                             time: new Date(),
                             txid: txId
                         }
@@ -548,7 +466,6 @@ class IndexRoute implements Routes {
         )
         this.router.get(
             `${this.path}/orders`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const result = {
@@ -568,101 +485,6 @@ class IndexRoute implements Routes {
                 })
         )
         /*
-          {
-            "market": "XRP-PERP",
-            "side": "sell",
-            "price": 0.306525,
-            "size": 31431.0,
-            "reduceOnly": false,
-            "ioc": false,
-            "postOnly": false,
-            "clientId": null
-          }
-        */
-        this.router.post(
-            `${this.path}/orders`,
-            IndexRoute.auth,
-            (req, res, next) =>
-                IndexRoute.errorWrapper(req, res, next, async (req, res) => {
-                    const symbol: string = req.body.market
-                    const isLong: boolean = req.body.side == 'buy'
-                    const price: number = req.body.price
-                    const size: number = req.body.size
-                    const reduceOnly: boolean = req.body.reduceOnly
-                    const ioc: boolean = req.body.ioc
-                    const postOnly: boolean = req.body.postOnly
-                    const clientId: number = req.body.clientId
-
-                    let orderType: OrderType = {limit: {}}
-                    if (ioc) {
-                        if (reduceOnly) {
-                            orderType = {reduceOnlyIoc: {}}
-                        } else {
-                            orderType = {immediateOrCancel: {}}
-                        }
-                    } else if (postOnly) {
-                        orderType = {postOnly: {}}
-                    } else if (reduceOnly) {
-                        orderType = {reduceOnlyLimit: {}}
-                    }
-                    const marketInfo = this.state.markets[symbol]
-                    const position = this.user.position(symbol)
-                    const txId = await this.margin.placePerpOrder({
-                        symbol,
-                        orderType,
-                        isLong,
-                        price,
-                        size,
-                        clientId
-                    })
-                    const tx = await getConfirmedTransaction(
-                        this.user.program.provider.connection,
-                        txId,
-                        'confirmed'
-                    )
-                    const logEvents = processTransactionLogs({
-                        tx,
-                        extraInfo: {
-                            accountLeverage: 1,
-                            collateralDecimals: marketInfo.assetDecimals,
-                            contractDecimals: USD_DECIMALS,
-                            entryPrice:
-                                position.pCoins.number / position.coins.number,
-                            long: position.isLong,
-                            symbol: marketInfo.symbol
-                        }
-                    })
-                    let sizeFilled
-                    for (const logEvent of logEvents) {
-                        if (logEvent.eventName == EventNames.RealizedPnlLog) {
-                            const data = logEvent.data as PnlLogData
-                            sizeFilled = data.sizeFilled
-                            break
-                        }
-                    }
-                    const remainingSize = size - sizeFilled
-                    const result = {
-                        success: true,
-                        result: {
-                            createdAt: new Date(),
-                            filledSize: sizeFilled,
-                            future: symbol,
-                            market: symbol,
-                            price: price,
-                            remainingSize: remainingSize,
-                            side: isLong ? 'buy' : 'sell',
-                            size: size,
-                            status: remainingSize == 0 ? 'closed' : 'open',
-                            reduceOnly: reduceOnly,
-                            ioc: ioc,
-                            postOnly: postOnly,
-                            clientId: clientId
-                        }
-                    }
-                    res.send(result)
-                })
-        )
-        /*
                                                               {
                                                                 "size": 31431,
                                                                 "price": 0.326525,
@@ -670,7 +492,6 @@ class IndexRoute implements Routes {
                                                             */
         this.router.post(
             `${this.path}/orders/:order_id/modify`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const price = req.body.price
@@ -748,7 +569,6 @@ class IndexRoute implements Routes {
         )
         this.router.get(
             `${this.path}/orders/:order_id`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const order = this.user.getOrderByOrderId(
@@ -772,7 +592,6 @@ class IndexRoute implements Routes {
         )
         this.router.delete(
             `${this.path}/orders/:order_id`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const result = {
@@ -790,10 +609,8 @@ class IndexRoute implements Routes {
                     res.send(result)
                 })
         )
-        //FIXME: REMEMBER DIFFERENT FROM FTX
         this.router.delete(
             `${this.path}/orders/by_client_id/:market_name/:client_order_id`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const result = {
@@ -812,7 +629,6 @@ class IndexRoute implements Routes {
         )
         this.router.delete(
             `${this.path}/orders`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const result = {
@@ -835,9 +651,125 @@ class IndexRoute implements Routes {
                     res.send(result)
                 })
         )
+        /*
+          {
+            "market": "XRP-PERP",
+            "side": "sell",
+            "price": 0.306525,
+            "size": 31431.0,
+            "reduceOnly": false,
+            "ioc": false,
+            "postOnly": false,
+            "clientId": null
+          }
+        */
+        this.router.post(
+            `${this.path}/orders`,
+            (req, res, next) =>
+                IndexRoute.errorWrapper(req, res, next, async (req, res) => {
+                    const symbol: string = req.body.market
+                    const isLong: boolean = req.body.side == 'buy'
+                    const price: number = req.body.price
+                    const size: number = req.body.size
+                    const reduceOnly: boolean = req.body.reduceOnly == 'true'
+                    const ioc: boolean = req.body.ioc == 'true'
+                    const postOnly: boolean = req.body.postOnly == 'true'
+                    const clientId: number = req.body.clientId
+
+                    let orderType: OrderType = {limit: {}}
+                    if (ioc) {
+                        if (reduceOnly) {
+                            orderType = {reduceOnlyIoc: {}}
+                        } else {
+                            orderType = {immediateOrCancel: {}}
+                        }
+                    } else if (postOnly) {
+                        orderType = {postOnly: {}}
+                    } else if (reduceOnly) {
+                        orderType = {reduceOnlyLimit: {}}
+                    }
+                    const marketInfo = this.state.markets[symbol]
+                    const position = this.user.position(symbol)
+                    console.log({
+                        symbol,
+                        orderType,
+                        isLong,
+                        price,
+                        size,
+                        clientId
+                    })
+                    const txId = await this.margin.placePerpOrder({
+                        symbol,
+                        orderType,
+                        isLong,
+                        price,
+                        size,
+                        clientId
+                    })
+                    const tx = await getConfirmedTransaction(
+                        this.user.program.provider.connection,
+                        txId,
+                        'confirmed'
+                    )
+                    const logEvents = processTransactionLogs({
+                        tx,
+                        extraInfo: {
+                            accountLeverage: 1,
+                            collateralDecimals: marketInfo.assetDecimals,
+                            contractDecimals: USD_DECIMALS,
+                            entryPrice:
+                                position.pCoins.number / position.coins.number,
+                            long: position.isLong,
+                            symbol: marketInfo.symbol
+                        }
+                    })
+                    let sizeFilled
+                    for (const logEvent of logEvents) {
+                        if (logEvent.eventName == EventNames.RealizedPnlLog) {
+                            const data = logEvent.data as PnlLogData
+                            sizeFilled = data.sizeFilled
+                            break
+                        }
+                    }
+                    const remainingSize = size - sizeFilled
+                    const result = {
+                        success: true,
+                        result: {
+                            createdAt: new Date(),
+                            filledSize: sizeFilled,
+                            future: symbol,
+                            market: symbol,
+                            price: price,
+                            remainingSize: remainingSize,
+                            side: isLong ? 'buy' : 'sell',
+                            size: size,
+                            status: remainingSize == 0 ? 'closed' : 'open',
+                            reduceOnly: reduceOnly,
+                            ioc: ioc,
+                            postOnly: postOnly,
+                            clientId: clientId
+                        }
+                    }
+                    res.send(result)
+                })
+        )
+        this.router.delete(
+            `${this.path}/positions/:market_name`,
+            (req, res, next) =>
+                IndexRoute.errorWrapper(req, res, next, async (req, res) => {
+                    const symbol: string = req.params.market_name
+                    const txId = await this.user.margin.closePosition(symbol)
+                    const result = {
+                        success: true,
+                        result: {
+                            txId: txId
+                        }
+                    }
+                    res.send(result)
+                })
+        )
         this.router.get(
             `${this.path}/trades/history`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const market: string = req.query.market
@@ -868,7 +800,6 @@ class IndexRoute implements Routes {
         )
         this.router.get(
             `${this.path}/funding_payments`,
-            IndexRoute.auth,
             (req, res, next) =>
                 IndexRoute.errorWrapper(req, res, next, async (req, res) => {
                     const market: string = req.query.market
