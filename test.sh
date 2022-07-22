@@ -1,3 +1,5 @@
 source .env
 
-./source/build.exe
+./build/source/build.exe
+
+read -p "Press [Enter] key to close..."

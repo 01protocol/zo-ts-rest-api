@@ -380,7 +380,6 @@ class IndexRoute implements Routes {
                     const symbol = req.body.coin
                     const size = req.body.size
                     const assetInfo = this.state.assets[symbol]
-                    console.log(symbol, size, true)
                     const txId = await this.margin.withdraw(symbol, size, true)
                     const tx = await getConfirmedTransaction(
                         this.user.program.provider.connection,
@@ -690,14 +689,6 @@ class IndexRoute implements Routes {
                     }
                     const marketInfo = this.state.markets[symbol]
                     const position = this.user.position(symbol)
-                    console.log({
-                        symbol,
-                        orderType,
-                        isLong,
-                        price,
-                        size,
-                        clientId
-                    })
                     const txId = await this.margin.placePerpOrder({
                         symbol,
                         orderType,
