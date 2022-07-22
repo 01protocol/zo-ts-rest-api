@@ -31,6 +31,8 @@ class App {
             console.log(`======= ENV: ${this.env} =======`)
             console.log(`🚀 App listening on the port ${this.port}`)
             console.log(`=================================`)
+            console.log(`Press CONTROL/COMMAND+C to exit`)
+            console.log(`=================================`)
         })
     }
 

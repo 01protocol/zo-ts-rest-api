@@ -137,4 +137,4 @@ dist
 .env.test.local
 
 dist
-build
+build/source

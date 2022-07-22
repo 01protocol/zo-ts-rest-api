@@ -2,8 +2,9 @@
 Zero One Typescript Rest API service
 
 ##
-`npm run compile` - build an executable file into `build/source/build.exe`
-`npm run dev` - run as 
+`npm run compile` - build an executable file into `build/source/build.exe` \
+`npm run dev` - run with nodemon \
+`npm run start` - run regular API 
 
 ## Config example
 (store in .env.development.local)
